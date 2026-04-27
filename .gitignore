@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+out/
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.userprefs
+
+# Rider
+.idea/
+
+# NuGet
+*.nupkg
+packages/
+project.lock.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Config (local overrides – the committed default template is tracked)
+config.json
