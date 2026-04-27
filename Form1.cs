@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net;
+using System.Net.NetworkInformation;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -387,6 +389,245 @@ public partial class Form1 : Form
 
     /// <summary>Clear Log button: wipes the log TextBox.</summary>
     private void btnClearLog_Click(object sender, EventArgs e) => txtLog.Clear();
+
+    // ─────────────────────── Form Load ──────────────────────────────────
+
+    /// <summary>
+    /// On form load, populate the Network Info tab immediately so the user
+    /// sees data without having to click Refresh first.
+    /// </summary>
+    private void Form1_Load(object sender, EventArgs e) => LoadNetworkInfo();
+
+    // ──────────────────── Network Info – Button Handlers ────────────────
+
+    /// <summary>Refresh button on the Network Info tab.</summary>
+    private void btnRefreshNetwork_Click(object sender, EventArgs e)
+    {
+        btnRefreshNetwork.Enabled = false;
+        Cursor = Cursors.WaitCursor;
+        try
+        {
+            LoadNetworkInfo();
+        }
+        finally
+        {
+            btnRefreshNetwork.Enabled = true;
+            Cursor = Cursors.Default;
+        }
+    }
+
+    /// <summary>
+    /// Copy IP button: copies the IPv4 address of the selected adapter row
+    /// to the system clipboard.
+    /// </summary>
+    private void btnCopyIP_Click(object sender, EventArgs e)
+    {
+        if (dgvNetworkInfo.SelectedRows.Count == 0)
+        {
+            MessageBox.Show(
+                "Vui lòng chọn một adapter trước.",
+                "Copy IP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
+        string ip = dgvNetworkInfo.SelectedRows[0].Cells["colIPv4"].Value?.ToString() ?? string.Empty;
+
+        if (string.IsNullOrEmpty(ip) || ip == "(none)")
+        {
+            MessageBox.Show(
+                "Adapter đang chọn không có địa chỉ IPv4.",
+                "Copy IP", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            return;
+        }
+
+        Clipboard.SetText(ip);
+        Log($"Đã copy IP: {ip}");
+        lblNetworkStatus.Text = $"✅  Copied to clipboard: {ip}";
+    }
+
+    // ──────────────────── Network Info – Core Logic ──────────────────────
+
+    /// <summary>
+    /// Data model for one network adapter entry.
+    /// </summary>
+    private sealed record AdapterInfo(
+        string Name,
+        string Status,
+        string IPv4,
+        string SubnetMask,
+        string Gateway,
+        string DNS,
+        int    InterfaceIndex,
+        bool   IsDefault);
+
+    /// <summary>
+    /// Loads active (Up, non-loopback) network adapters into the DataGridView
+    /// and highlights the adapter currently carrying the default route.
+    /// </summary>
+    private void LoadNetworkInfo()
+    {
+        Log("═══════════════ Network Info – Refreshing ═══════════════");
+
+        try
+        {
+            string defaultGatewayIp = GetDefaultGatewayIp();
+            var adapters = GetNetworkAdapters(defaultGatewayIp);
+
+            dgvNetworkInfo.Rows.Clear();
+
+            foreach (AdapterInfo a in adapters)
+            {
+                int idx = dgvNetworkInfo.Rows.Add(
+                    a.Name,
+                    a.Status,
+                    a.IPv4,
+                    a.SubnetMask,
+                    a.Gateway,
+                    a.DNS,
+                    a.InterfaceIndex);
+
+                if (a.IsDefault)
+                {
+                    // Highlight the adapter carrying the default (internet) route.
+                    var row = dgvNetworkInfo.Rows[idx];
+                    row.DefaultCellStyle.BackColor = Color.FromArgb(210, 245, 210);
+                    row.DefaultCellStyle.Font      = new Font("Segoe UI", 9F, FontStyle.Bold);
+                    row.DefaultCellStyle.ForeColor = Color.FromArgb(0, 100, 0);
+                }
+            }
+
+            string defaultInfo = string.IsNullOrEmpty(defaultGatewayIp)
+                ? "no default gateway detected"
+                : $"default gateway → {defaultGatewayIp}";
+
+            lblNetworkStatus.Text =
+                $"Last refresh: {DateTime.Now:HH:mm:ss}  |  " +
+                $"{adapters.Count} active adapter(s)  |  {defaultInfo}";
+
+            Log($"Network Info: {adapters.Count} active adapter(s) found. {defaultInfo}.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[ERR] LoadNetworkInfo: {ex.Message}");
+            lblNetworkStatus.Text = $"⚠  Error: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Returns all active (Up, non-loopback) network adapters with their
+    /// IPv4 configuration details.
+    /// </summary>
+    /// <param name="defaultGatewayIp">
+    ///   The IPv4 gateway of the current default route (may be empty).
+    ///   Used to mark the <see cref="AdapterInfo.IsDefault"/> flag.
+    /// </param>
+    private static List<AdapterInfo> GetNetworkAdapters(string defaultGatewayIp)
+    {
+        var result = new List<AdapterInfo>();
+
+        foreach (NetworkInterface nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            // Skip loopback interfaces.
+            if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback)
+                continue;
+
+            // Only show adapters that are currently Up.
+            if (nic.OperationalStatus != OperationalStatus.Up)
+                continue;
+
+            IPInterfaceProperties props = nic.GetIPProperties();
+
+            // ── IPv4 unicast address & subnet mask ────────────────────────
+            UnicastIPAddressInformation? unicast = props.UnicastAddresses
+                .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
+
+            string ipv4       = unicast?.Address.ToString() ?? "(none)";
+            string subnetMask = unicast is not null
+                ? CidrToSubnetMask(unicast.PrefixLength)
+                : "(none)";
+
+            // ── Default gateway ───────────────────────────────────────────
+            string gateway = props.GatewayAddresses
+                .Where(g => g.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(g => g.Address.ToString())
+                .FirstOrDefault() ?? "(none)";
+
+            // ── DNS servers (IPv4 only) ────────────────────────────────────
+            string dns = string.Join(", ", props.DnsAddresses
+                .Where(d => d.AddressFamily == AddressFamily.InterNetwork)
+                .Select(d => d.ToString()));
+            if (string.IsNullOrEmpty(dns))
+                dns = "(none)";
+
+            // ── Interface index ───────────────────────────────────────────
+            int ifIndex = GetIPv4InterfaceIndex(props);
+
+            // ── Is this the internet-facing adapter? ──────────────────────
+            bool isDefault = !string.IsNullOrEmpty(defaultGatewayIp)
+                && gateway == defaultGatewayIp;
+
+            result.Add(new AdapterInfo(
+                Name:           nic.Name,
+                Status:         nic.OperationalStatus.ToString(),
+                IPv4:           ipv4,
+                SubnetMask:     subnetMask,
+                Gateway:        gateway,
+                DNS:            dns,
+                InterfaceIndex: ifIndex,
+                IsDefault:      isDefault));
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Safely retrieves the IPv4 interface index; returns 0 on failure.
+    /// </summary>
+    private static int GetIPv4InterfaceIndex(IPInterfaceProperties props)
+    {
+        try
+        {
+            return props.GetIPv4Properties().Index;
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Parses <c>route print 0.0.0.0</c> to find the gateway of the current
+    /// default route (the route with destination 0.0.0.0 mask 0.0.0.0).
+    /// Returns an empty string if the default route cannot be determined.
+    /// </summary>
+    private string GetDefaultGatewayIp()
+    {
+        try
+        {
+            var (_, output) = RunCommand("route", "print 0.0.0.0");
+
+            // Data rows look like (columns separated by whitespace):
+            //   Network Dest   Netmask     Gateway        Interface  Metric
+            //   0.0.0.0        0.0.0.0     192.168.5.1    192.168.5.100    1
+            foreach (string line in output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                string trimmed = line.TrimStart();
+                if (!trimmed.StartsWith("0.0.0.0", StringComparison.Ordinal))
+                    continue;
+
+                string[] parts = trimmed.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                // parts[0] = "0.0.0.0", parts[1] = "0.0.0.0", parts[2] = gateway
+                if (parts.Length >= 3 && IPAddress.TryParse(parts[2], out _))
+                    return parts[2];
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] GetDefaultGatewayIp: {ex.Message}");
+        }
+
+        return string.Empty;
+    }
 }
 
 // ---------------------------------------------------------------------------
