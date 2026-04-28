@@ -18,7 +18,7 @@
 //     dgvNetworkInfo  – DataGridView of active network adapters
 //     btnRefreshNetwork – Reload adapter list
 //     btnCopyIP       – Copy selected row's IPv4 to clipboard
-//     lblNetworkStatus – Status / last-refresh timestamp
+//     lblNetworkStatus – Trạng thái / thời điểm làm mới gần nhất
 // ============================================================================
 
 namespace SITWCH_ETH;
@@ -80,7 +80,7 @@ partial class Form1
         components = new System.ComponentModel.Container();
 
         // ── Form ──────────────────────────────────────────────────────────
-        Text            = "SITWCH_ETH – Network Route Manager";
+        Text            = "SITWCH_ETH – Quản Lý Route Mạng";
         Size            = new Size(900, 720);
         MinimumSize     = new Size(760, 620);
         StartPosition   = FormStartPosition.CenterScreen;
@@ -99,13 +99,13 @@ partial class Form1
 
         tabPageRouteManager = new TabPage
         {
-            Text    = "🔀  Route Manager",
+            Text    = "🔀  Quản Lý Route",
             Padding = new Padding(4),
         };
 
         tabPageNetworkInfo = new TabPage
         {
-            Text    = "🌐  Network Info",
+            Text    = "🌐  Thông Tin Mạng",
             Padding = new Padding(4),
         };
 
@@ -118,7 +118,7 @@ partial class Form1
         // ── grpGateway ────────────────────────────────────────────────────
         grpGateway = new GroupBox
         {
-            Text     = "⚙ Gateway Configuration",
+            Text     = "⚙ Cấu Hình Gateway",
             Location = new Point(12, 10),
             Size     = new Size(856, 80),
             Anchor   = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -127,7 +127,7 @@ partial class Form1
 
         lblEthGateway = new Label
         {
-            Text      = "Ethernet Gateway:",
+            Text      = "Gateway Ethernet:",
             Location  = new Point(12, 28),
             Size      = new Size(130, 20),
             TextAlign = ContentAlignment.MiddleRight,
@@ -139,13 +139,13 @@ partial class Form1
             Name            = "txtEthGateway",
             Location        = new Point(148, 26),
             Size            = new Size(190, 23),
-            PlaceholderText = "e.g. 10.21.99.1",
+            PlaceholderText = "VD: 10.21.99.1",
             Font            = new Font("Segoe UI", 9F),
         };
 
         lblWifiGateway = new Label
         {
-            Text      = "WiFi Gateway:",
+            Text      = "Gateway WiFi:",
             Location  = new Point(370, 28),
             Size      = new Size(110, 20),
             TextAlign = ContentAlignment.MiddleRight,
@@ -157,14 +157,14 @@ partial class Form1
             Name            = "txtWifiGateway",
             Location        = new Point(486, 26),
             Size            = new Size(190, 23),
-            PlaceholderText = "e.g. 192.168.5.1",
+            PlaceholderText = "VD: 192.168.5.1",
             Font            = new Font("Segoe UI", 9F),
         };
 
         btnDetectNetwork = new Button
         {
             Name      = "btnDetectNetwork",
-            Text      = "Detect Network",
+            Text      = "Dò Mạng",
             Location  = new Point(700, 22),
             Size      = new Size(140, 32),
             BackColor = Color.FromArgb(0, 120, 215),
@@ -183,7 +183,7 @@ partial class Form1
         // ── grpRoutes ─────────────────────────────────────────────────────
         grpRoutes = new GroupBox
         {
-            Text     = "🔀 Route Entries",
+            Text     = "🔀 Danh Sách Route",
             Location = new Point(12, 100),
             Size     = new Size(856, 260),
             Anchor   = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -192,7 +192,7 @@ partial class Form1
 
         lblNetworks = new Label
         {
-            Text     = "Networks (CIDR)  → Ethernet:",
+            Text     = "Mạng (CIDR)  → Ethernet:",
             Location = new Point(12, 22),
             Size     = new Size(200, 20),
             Font     = new Font("Segoe UI", 9F),
@@ -212,7 +212,7 @@ partial class Form1
 
         lblNetworksHint = new Label
         {
-            Text      = "One CIDR per line, e.g.  10.53.0.0/16",
+            Text      = "Mỗi dòng một CIDR, VD:  10.53.0.0/16",
             Location  = new Point(12, 243),
             Size      = new Size(390, 16),
             ForeColor = SystemColors.GrayText,
@@ -221,7 +221,7 @@ partial class Form1
 
         lblIPs = new Label
         {
-            Text     = "Individual IPs  → Ethernet:",
+            Text     = "IP riêng lẻ  → Ethernet:",
             Location = new Point(432, 22),
             Size     = new Size(200, 20),
             Font     = new Font("Segoe UI", 9F),
@@ -241,7 +241,7 @@ partial class Form1
 
         lblIPsHint = new Label
         {
-            Text      = "One IP per line, e.g.  10.53.118.120",
+            Text      = "Mỗi dòng một IP, VD:  10.53.118.120",
             Location  = new Point(432, 243),
             Size      = new Size(390, 16),
             ForeColor = SystemColors.GrayText,
@@ -262,7 +262,7 @@ partial class Form1
         btnApply = new Button
         {
             Name      = "btnApply",
-            Text      = "▶  Apply Routes",
+            Text      = "▶  Áp Dụng Route",
             Location  = new Point(0, 4),
             Size      = new Size(140, 36),
             BackColor = Color.FromArgb(0, 120, 215),
@@ -276,7 +276,7 @@ partial class Form1
         btnLoadExistingRoutes = new Button
         {
             Name      = "btnLoadExistingRoutes",
-            Text      = "↻  Load Existing Routes",
+            Text      = "↻  Tải Route Hiện Có",
             Location  = new Point(150, 4),
             Size      = new Size(170, 36),
             FlatStyle = FlatStyle.Flat,
@@ -287,7 +287,7 @@ partial class Form1
         btnSaveConfig = new Button
         {
             Name      = "btnSaveConfig",
-            Text      = "💾  Save Config",
+            Text      = "💾  Lưu Cấu Hình",
             Location  = new Point(330, 4),
             Size      = new Size(140, 36),
             FlatStyle = FlatStyle.Flat,
@@ -298,7 +298,7 @@ partial class Form1
         btnLoadConfig = new Button
         {
             Name      = "btnLoadConfig",
-            Text      = "📂  Load Config",
+            Text      = "📂  Tải Cấu Hình",
             Location  = new Point(480, 4),
             Size      = new Size(140, 36),
             FlatStyle = FlatStyle.Flat,
@@ -309,7 +309,7 @@ partial class Form1
         btnClearLog = new Button
         {
             Name      = "btnClearLog",
-            Text      = "🗑  Clear Log",
+            Text      = "🗑  Xóa Log",
             Location  = new Point(630, 4),
             Size      = new Size(120, 36),
             FlatStyle = FlatStyle.Flat,
@@ -322,7 +322,7 @@ partial class Form1
         // ── grpLog ────────────────────────────────────────────────────────
         grpLog = new GroupBox
         {
-            Text   = "📋 Log",
+            Text   = "📋 Nhật Ký",
             Location = new Point(12, 424),
             Size   = new Size(856, 198),
             Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right,
@@ -371,7 +371,7 @@ partial class Form1
         btnRefreshNetwork = new Button
         {
             Name      = "btnRefreshNetwork",
-            Text      = "🔄  Refresh",
+            Text      = "🔄  Làm Mới",
             Location  = new Point(0, 4),
             Size      = new Size(120, 36),
             BackColor = Color.FromArgb(0, 120, 215),
@@ -385,7 +385,7 @@ partial class Form1
         btnCopyIP = new Button
         {
             Name      = "btnCopyIP",
-            Text      = "📋  Copy IP",
+            Text      = "📋  Sao Chép IP",
             Location  = new Point(130, 4),
             Size      = new Size(120, 36),
             FlatStyle = FlatStyle.Flat,
@@ -398,7 +398,7 @@ partial class Form1
         // ── lblNetworkStatus ──────────────────────────────────────────────
         lblNetworkStatus = new Label
         {
-            Text      = "Press 🔄 Refresh to load network adapters.",
+            Text      = "Bấm 🔄 Làm Mới để tải danh sách card mạng.",
             Location  = new Point(12, 58),
             Size      = new Size(856, 22),
             Anchor    = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
@@ -438,13 +438,13 @@ partial class Form1
         // ── Define columns ────────────────────────────────────────────────
         dgvNetworkInfo.Columns.AddRange(
         [
-            new DataGridViewTextBoxColumn { Name = "colAdapterName",  HeaderText = "Adapter Name",       FillWeight = 18 },
-            new DataGridViewTextBoxColumn { Name = "colStatus",       HeaderText = "Status",             FillWeight = 8  },
-            new DataGridViewTextBoxColumn { Name = "colIPv4",         HeaderText = "IPv4 Address",       FillWeight = 13 },
-            new DataGridViewTextBoxColumn { Name = "colSubnetMask",   HeaderText = "Subnet Mask",        FillWeight = 13 },
-            new DataGridViewTextBoxColumn { Name = "colGateway",      HeaderText = "Default Gateway",    FillWeight = 13 },
-            new DataGridViewTextBoxColumn { Name = "colDNS",          HeaderText = "DNS Servers",        FillWeight = 22 },
-            new DataGridViewTextBoxColumn { Name = "colIfIndex",      HeaderText = "Interface Index",    FillWeight = 10 },
+            new DataGridViewTextBoxColumn { Name = "colAdapterName",  HeaderText = "Tên Card Mạng",       FillWeight = 18 },
+            new DataGridViewTextBoxColumn { Name = "colStatus",       HeaderText = "Trạng Thái",             FillWeight = 8  },
+            new DataGridViewTextBoxColumn { Name = "colIPv4",         HeaderText = "Địa Chỉ IPv4",       FillWeight = 13 },
+            new DataGridViewTextBoxColumn { Name = "colSubnetMask",   HeaderText = "Mặt Nạ Mạng",        FillWeight = 13 },
+            new DataGridViewTextBoxColumn { Name = "colGateway",      HeaderText = "Gateway Mặc Định",    FillWeight = 13 },
+            new DataGridViewTextBoxColumn { Name = "colDNS",          HeaderText = "Máy Chủ DNS",        FillWeight = 22 },
+            new DataGridViewTextBoxColumn { Name = "colIfIndex",      HeaderText = "Chỉ Số Interface",    FillWeight = 10 },
         ]);
 
         // ── Wire up Tab 2 button click handlers ───────────────────────────

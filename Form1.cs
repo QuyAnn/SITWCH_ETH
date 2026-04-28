@@ -12,7 +12,7 @@ namespace SITWCH_ETH;
 // Form1.cs – Network Route Manager
 // Manages Windows routing table entries so that:
 //   • Internal networks (e.g. 10.x.x.x) are routed via the Ethernet gateway
-//   • Everything else (default route) goes via the WiFi gateway
+//   • Everything else (route mặc định) goes via the WiFi gateway
 //
 // Requires Administrator rights (enforced in app.manifest).
 // ---------------------------------------------------------------------------
@@ -59,7 +59,7 @@ public partial class Form1 : Form
     private static string CidrToSubnetMask(int prefix)
     {
         if (prefix < 0 || prefix > 32)
-            throw new ArgumentOutOfRangeException(nameof(prefix), "Prefix length must be between 0 and 32.");
+            throw new ArgumentOutOfRangeException(nameof(prefix), "Độ dài prefix phải nằm trong khoảng 0 đến 32.");
 
         // Build a 32-bit mask, then split into four octets.
         uint mask = prefix == 0 ? 0u : 0xFFFFFFFFu << (32 - prefix);
@@ -102,7 +102,7 @@ public partial class Form1 : Form
         };
 
         using var process = Process.Start(psi)
-            ?? throw new InvalidOperationException($"Could not start process: {fileName}");
+            ?? throw new InvalidOperationException($"Không thể chạy tiến trình: {fileName}");
 
         string stdout = process.StandardOutput.ReadToEnd();
         string stderr = process.StandardError.ReadToEnd();
@@ -121,13 +121,13 @@ public partial class Form1 : Form
         {
             var (exitCode, output) = RunCommand("route", "print");
             if (exitCode != 0)
-                Log($"[WARN] route print failed: {output}");
+                Log($"[CẢNH BÁO] Lệnh route print thất bại: {output}");
 
             return output;
         }
         catch (Exception ex)
         {
-            Log($"[WARN] GetRouteTable: {ex.Message}");
+            Log($"[CẢNH BÁO] GetRouteTable: {ex.Message}");
             return string.Empty;
         }
     }
@@ -189,14 +189,14 @@ public partial class Form1 : Form
         }
         catch (Exception ex)
         {
-            Log($"[WARN] GetActiveAdapters: {ex.Message}");
+            Log($"[CẢNH BÁO] GetActiveAdapters: {ex.Message}");
             return [];
         }
     }
 
     /// <summary>
     /// Finds the IPv4 gateway for Ethernet or WiFi adapters.
-    /// When multiple adapters match, adapters carrying the default gateway are preferred.
+    /// When multiple adapters match, adapters carrying the gateway mặc định are preferred.
     /// </summary>
     private string GetGatewayByType(IEnumerable<NetworkInterface> adapters, NetworkAdapterKind adapterKind)
     {
@@ -227,7 +227,7 @@ public partial class Form1 : Form
                     if (string.IsNullOrWhiteSpace(guessedGateway))
                         continue;
 
-                    Log($"Gateway not found → guessed: {guessedGateway}");
+                    Log($"Không tìm thấy gateway → tự đoán: {guessedGateway}");
                     return guessedGateway;
                 }
             }
@@ -236,7 +236,7 @@ public partial class Form1 : Form
         }
         catch (Exception ex)
         {
-            Log($"[WARN] GetGatewayByType({adapterKind}): {ex.Message}");
+            Log($"[CẢNH BÁO] GetGatewayByType({adapterKind}): {ex.Message}");
             return string.Empty;
         }
     }
@@ -389,7 +389,7 @@ public partial class Form1 : Form
     {
         if (interfaceIndex <= 0)
         {
-            Log($"  [WARN] Cannot reset {label} metric: interface index not found.");
+            Log($"  [CẢNH BÁO] Không thể reset {label} metric: không tìm thấy interface index.");
             return;
         }
 
@@ -402,13 +402,13 @@ public partial class Form1 : Form
                 $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"");
 
             if (exitCode != 0)
-                Log($"  [WARN] Cannot reset {label} metric on interface {interfaceIndex}: {output}");
+                Log($"  [CẢNH BÁO] Không thể reset {label} metric trên interface {interfaceIndex}: {output}");
             else
-                Log($"  [OK]   Reset {label} metric on interface {interfaceIndex}");
+                Log($"  [THÀNH CÔNG]   Đã reset {label} metric trên interface {interfaceIndex}");
         }
         catch (Exception ex)
         {
-            Log($"  [WARN] ResetInterfaceMetric({label}): {ex.Message}");
+            Log($"  [CẢNH BÁO] ResetInterfaceMetric({label}): {ex.Message}");
         }
     }
 
@@ -416,7 +416,7 @@ public partial class Form1 : Form
     {
         if (interfaceIndex <= 0)
         {
-            Log($"  [WARN] Cannot set {label} metric: interface index not found.");
+            Log($"  [CẢNH BÁO] Không thể đặt {label} metric: không tìm thấy interface index.");
             return;
         }
 
@@ -427,13 +427,13 @@ public partial class Form1 : Form
                 $"interface ipv4 set interface {interfaceIndex} metric={metric}");
 
             if (exitCode != 0)
-                Log($"  [WARN] Cannot set {label} metric on interface {interfaceIndex}: {output}");
+                Log($"  [CẢNH BÁO] Không thể đặt {label} metric trên interface {interfaceIndex}: {output}");
             else
-                Log($"  [OK]   Set {label} interface {interfaceIndex} metric={metric}");
+                Log($"  [THÀNH CÔNG]   Đã đặt {label} interface {interfaceIndex} metric={metric}");
         }
         catch (Exception ex)
         {
-            Log($"  [WARN] SetInterfaceMetric({label}): {ex.Message}");
+            Log($"  [CẢNH BÁO] SetInterfaceMetric({label}): {ex.Message}");
         }
     }
 
@@ -468,7 +468,7 @@ public partial class Form1 : Form
             string ethGateway = gateway.Trim();
             if (!IsValidIp(ethGateway))
             {
-                Log($"[WARN] Ethernet Gateway không hợp lệ, không load route: '{gateway}'");
+                Log($"[CẢNH BÁO] Gateway Ethernet không hợp lệ, không tải route: '{gateway}'");
                 return new RoutesByGateway([], []);
             }
 
@@ -513,7 +513,7 @@ public partial class Form1 : Form
                     int prefix = MaskToCIDR(mask);
                     if (prefix < 0)
                     {
-                        Log($"  [WARN] Bỏ qua route có subnet mask không hợp lệ: {destination} {mask}");
+                        Log($"  [CẢNH BÁO] Bỏ qua route có subnet mask không hợp lệ: {destination} {mask}");
                         continue;
                     }
 
@@ -521,13 +521,13 @@ public partial class Form1 : Form
                 }
                 catch (Exception ex)
                 {
-                    Log($"  [WARN] Bỏ qua dòng route không parse được: {ex.Message}");
+                    Log($"  [CẢNH BÁO] Bỏ qua dòng route không parse được: {ex.Message}");
                 }
             }
         }
         catch (Exception ex)
         {
-            Log($"[WARN] ParseRoutesByGateway: {ex.Message}");
+            Log($"[CẢNH BÁO] ParseRoutesByGateway: {ex.Message}");
         }
 
         return new RoutesByGateway(
@@ -611,9 +611,9 @@ public partial class Form1 : Form
     {
         var (exitCode, output) = RunCommand("route", $"delete {destination} mask {mask}");
         if (exitCode != 0)
-            Log($"  [WARN] Cannot delete route {destination} mask {mask}: {output}");
+            Log($"  [CẢNH BÁO] Không thể xóa route {destination} mask {mask}: {output}");
         else
-            Log($"  [OK]   Deleted route {destination} mask {mask}");
+            Log($"  [THÀNH CÔNG]   Đã xóa route {destination} mask {mask}");
     }
 
     /// <summary>
@@ -632,7 +632,7 @@ public partial class Form1 : Form
 
                 if (!IsValidCidr(cidr))
                 {
-                    Log($"  [WARN] Bỏ qua CIDR không hợp lệ khi xóa: '{cidr}'");
+                    Log($"  [CẢNH BÁO] Bỏ qua CIDR không hợp lệ khi xóa: '{cidr}'");
                     continue;
                 }
 
@@ -641,12 +641,12 @@ public partial class Form1 : Form
                 string mask = CIDRToMask(cidr);
                 if (string.IsNullOrEmpty(mask))
                 {
-                    Log($"  [WARN] Không convert được CIDR sang mask: '{cidr}'");
+                    Log($"  [CẢNH BÁO] Không convert được CIDR sang mask: '{cidr}'");
                     continue;
                 }
 
                 DeleteRoute(network, mask);
-                Log($"Deleted route: {cidr}");
+                Log($"Đã xóa route: {cidr}");
             }
 
             foreach (string rawLine in txtIPs.Lines)
@@ -657,17 +657,17 @@ public partial class Form1 : Form
 
                 if (!IsValidIp(ip))
                 {
-                    Log($"  [WARN] Bỏ qua IP không hợp lệ khi xóa: '{ip}'");
+                    Log($"  [CẢNH BÁO] Bỏ qua IP không hợp lệ khi xóa: '{ip}'");
                     continue;
                 }
 
                 DeleteRoute(ip, "255.255.255.255");
-                Log($"Deleted IP route: {ip}");
+                Log($"Đã xóa route IP: {ip}");
             }
         }
         catch (Exception ex)
         {
-            Log($"[WARN] DeleteRoutesFromUI: {ex.Message}");
+            Log($"[CẢNH BÁO] DeleteRoutesFromUI: {ex.Message}");
         }
     }
 
@@ -681,14 +681,14 @@ public partial class Form1 : Form
         try
         {
             RoutesByGateway existingRoutes = ParseRoutesByGateway(ethGateway);
-            Log($"Found {existingRoutes.Count} existing route(s) from gateway {ethGateway}");
+            Log($"Tìm thấy {existingRoutes.Count} route hiện có qua gateway {ethGateway}");
 
             foreach (string cidr in existingRoutes.Networks)
             {
                 string[] parts = cidr.Split('/');
                 if (parts.Length != 2)
                 {
-                    Log($"  [WARN] Bỏ qua route không hợp lệ khi xóa theo gateway: '{cidr}'");
+                    Log($"  [CẢNH BÁO] Bỏ qua route không hợp lệ khi xóa theo gateway: '{cidr}'");
                     continue;
                 }
 
@@ -696,29 +696,29 @@ public partial class Form1 : Form
                 string mask = CIDRToMask(cidr);
                 if (string.IsNullOrEmpty(mask))
                 {
-                    Log($"  [WARN] Không convert được CIDR sang mask: '{cidr}'");
+                    Log($"  [CẢNH BÁO] Không convert được CIDR sang mask: '{cidr}'");
                     continue;
                 }
 
                 DeleteRoute(network, mask);
-                Log($"Deleted existing route from gateway: {cidr}");
+                Log($"Đã xóa route hiện có qua gateway: {cidr}");
             }
 
             foreach (string ip in existingRoutes.IPs)
             {
                 if (!IsValidIp(ip))
                 {
-                    Log($"  [WARN] Bỏ qua IP không hợp lệ khi xóa theo gateway: '{ip}'");
+                    Log($"  [CẢNH BÁO] Bỏ qua IP không hợp lệ khi xóa theo gateway: '{ip}'");
                     continue;
                 }
 
                 DeleteRoute(ip, "255.255.255.255");
-                Log($"Deleted existing IP route from gateway: {ip}");
+                Log($"Đã xóa route IP hiện có qua gateway: {ip}");
             }
         }
         catch (Exception ex)
         {
-            Log($"[WARN] DeleteExistingRoutesByGateway: {ex.Message}");
+            Log($"[CẢNH BÁO] DeleteExistingRoutesByGateway: {ex.Message}");
         }
     }
 
@@ -727,11 +727,11 @@ public partial class Form1 : Form
         try
         {
             DeleteRoute("0.0.0.0", "0.0.0.0");
-            Log("Deleted default route: 0.0.0.0/0");
+            Log("Đã xóa route mặc định: 0.0.0.0/0");
         }
         catch (Exception ex)
         {
-            Log($"[WARN] DeleteDefaultRoute: {ex.Message}");
+            Log($"[CẢNH BÁO] DeleteDefaultRoute: {ex.Message}");
         }
     }
 
@@ -742,7 +742,7 @@ public partial class Form1 : Form
     {
         if (RouteExists(destination))
         {
-            Log($"  [SKIP] Route {destination} mask {mask} already exists – skipping.");
+            Log($"  [BỎ QUA] Route {destination} mask {mask} đã tồn tại – bỏ qua.");
             return;
         }
 
@@ -750,9 +750,9 @@ public partial class Form1 : Form
         var (exitCode, output) = RunCommand("route", args);
 
         if (exitCode != 0)
-            Log($"  [ERR]  route {args} → {output}");
+            Log($"  [LỖI]  lệnh route {args} → {output}");
         else
-            Log($"  [OK]   route {args}");
+            Log($"  [THÀNH CÔNG]   lệnh route {args}");
     }
 
     // ─────────────────────────── Input Validation ───────────────────────────
@@ -784,7 +784,7 @@ public partial class Form1 : Form
     private void btnApply_Click(object sender, EventArgs e)
     {
         txtLog.Clear();
-        Log("═══════════════ Apply Routes – Started ═══════════════");
+        Log("═══════════════ Áp Dụng Route – Bắt Đầu ═══════════════");
 
         // ── Validate gateways ──────────────────────────────────────────────
         string ethGateway  = txtEthGateway.Text.Trim();
@@ -794,7 +794,7 @@ public partial class Form1 : Form
         {
             MessageBox.Show(
                 "Ethernet Gateway không hợp lệ.\nVí dụ hợp lệ: 10.21.99.1",
-                "Lỗi Validate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "Lỗi Kiểm Tra", MessageBoxButtons.OK, MessageBoxIcon.Error);
             txtEthGateway.Focus();
             return;
         }
@@ -803,7 +803,7 @@ public partial class Form1 : Form
         {
             MessageBox.Show(
                 "WiFi Gateway không hợp lệ.\nVí dụ hợp lệ: 192.168.5.1",
-                "Lỗi Validate", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                "Lỗi Kiểm Tra", MessageBoxButtons.OK, MessageBoxIcon.Error);
             txtWifiGateway.Focus();
             return;
         }
@@ -817,7 +817,7 @@ public partial class Form1 : Form
 
             if (!IsValidCidr(trimmed))
             {
-                Log($"  [WARN] Bỏ qua CIDR không hợp lệ: '{trimmed}'");
+                Log($"  [CẢNH BÁO] Bỏ qua CIDR không hợp lệ: '{trimmed}'");
                 continue;
             }
             networks.Add(trimmed);
@@ -832,7 +832,7 @@ public partial class Form1 : Form
 
             if (!IsValidIp(trimmed))
             {
-                Log($"  [WARN] Bỏ qua IP không hợp lệ: '{trimmed}'");
+                Log($"  [CẢNH BÁO] Bỏ qua IP không hợp lệ: '{trimmed}'");
                 continue;
             }
             ips.Add(trimmed);
@@ -850,7 +850,7 @@ public partial class Form1 : Form
             int wifiInterfaceIndex     = GetInterfaceIndexByType(activeAdapters, NetworkAdapterKind.Wifi);
 
             // Step 1 – Clear and re-apply interface metrics like the BAT file
-            Log("─── Bước 1: Reset / set interface metric ───────────────");
+            Log("─── Bước 1: Reset / đặt metric card mạng ───────────────");
             ResetManagedNetworkMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
             ApplyInterfaceMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
 
@@ -878,17 +878,17 @@ public partial class Form1 : Form
             }
 
             // Step 5 – Default route via WiFi gateway
-            Log("─── Bước 5: Thêm default route → WiFi ─────────────────");
+            Log("─── Bước 5: Thêm route mặc định → WiFi ─────────────────");
             AddRoute("0.0.0.0", "0.0.0.0", wifiGateway, metric: 20);
 
-            Log("═══════════════ Apply Routes – Hoàn Tất ════════════════");
+            Log("═══════════════ Áp Dụng Route – Hoàn Tất ════════════════");
             MessageBox.Show(
                 "Áp dụng route thành công!\nXem chi tiết trong Log phía dưới.",
                 "Thành Công", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            Log($"[EXCEPTION] {ex.Message}");
+            Log($"[LỖI NGOẠI LỆ] {ex.Message}");
             MessageBox.Show(
                 $"Đã xảy ra lỗi không mong muốn:\n{ex.Message}",
                 "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
@@ -922,7 +922,7 @@ public partial class Form1 : Form
         // Ask user where to save
         using var dialog = new SaveFileDialog
         {
-            Filter       = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            Filter       = "File JSON (*.json)|*.json|Tất cả file (*.*)|*.*",
             Title        = "Lưu file cấu hình",
             FileName     = DefaultConfigFileName,
             DefaultExt   = "json",
@@ -939,16 +939,16 @@ public partial class Form1 : Form
             });
             File.WriteAllText(dialog.FileName, json, Encoding.UTF8);
 
-            Log($"Config đã lưu vào: {dialog.FileName}");
+            Log($"Cấu hình đã lưu vào: {dialog.FileName}");
             MessageBox.Show(
                 $"Đã lưu cấu hình vào:\n{dialog.FileName}",
-                "Lưu Config", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "Lưu Cấu Hình", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
         catch (Exception ex)
         {
-            Log($"[ERR] Lưu config thất bại: {ex.Message}");
+            Log($"[LỖI] Lưu cấu hình thất bại: {ex.Message}");
             MessageBox.Show(
-                $"Không thể lưu config:\n{ex.Message}",
+                $"Không thể lưu cấu hình:\n{ex.Message}",
                 "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -960,7 +960,7 @@ public partial class Form1 : Form
     {
         using var dialog = new OpenFileDialog
         {
-            Filter    = "JSON files (*.json)|*.json|All files (*.*)|*.*",
+            Filter    = "File JSON (*.json)|*.json|Tất cả file (*.*)|*.*",
             Title     = "Chọn file cấu hình",
             FileName  = DefaultConfigFileName,
         };
@@ -975,7 +975,7 @@ public partial class Form1 : Form
             if (config is null)
             {
                 MessageBox.Show(
-                    "File config không hợp lệ hoặc rỗng.",
+                    "File cấu hình không hợp lệ hoặc rỗng.",
                     "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
@@ -985,20 +985,20 @@ public partial class Form1 : Form
             txtNetworks.Lines   = config.Networks    ?? [];
             txtIPs.Lines        = config.IPs         ?? [];
 
-            Log($"Config đã load từ: {dialog.FileName}");
+            Log($"Cấu hình đã tải từ: {dialog.FileName}");
         }
         catch (JsonException jex)
         {
-            Log($"[ERR] JSON không hợp lệ: {jex.Message}");
+            Log($"[LỖI] JSON không hợp lệ: {jex.Message}");
             MessageBox.Show(
                 $"File không đúng định dạng JSON:\n{jex.Message}",
                 "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         catch (Exception ex)
         {
-            Log($"[ERR] Load config thất bại: {ex.Message}");
+            Log($"[LỖI] Tải cấu hình thất bại: {ex.Message}");
             MessageBox.Show(
-                $"Không thể load config:\n{ex.Message}",
+                $"Không thể tải cấu hình:\n{ex.Message}",
                 "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
@@ -1023,12 +1023,12 @@ public partial class Form1 : Form
             txtEthGateway.Text  = ethernetGateway;
             txtWifiGateway.Text = wifiGateway;
 
-            Log($"Detected Ethernet: {(string.IsNullOrEmpty(ethernetGateway) ? "(none)" : ethernetGateway)}");
-            Log($"Detected WiFi: {(string.IsNullOrEmpty(wifiGateway) ? "(none)" : wifiGateway)}");
+            Log($"Đã dò Ethernet: {(string.IsNullOrEmpty(ethernetGateway) ? "(không có)" : ethernetGateway)}");
+            Log($"Đã dò WiFi: {(string.IsNullOrEmpty(wifiGateway) ? "(không có)" : wifiGateway)}");
         }
         catch (Exception ex)
         {
-            Log($"[WARN] DetectNetworkGateways: {ex.Message}");
+            Log($"[CẢNH BÁO] DetectNetworkGateways: {ex.Message}");
         }
         finally
         {
@@ -1046,7 +1046,7 @@ public partial class Form1 : Form
         if (string.IsNullOrWhiteSpace(ethGateway))
         {
             if (logWhenGatewayMissing)
-                Log("[WARN] Nhập Ethernet Gateway trước khi load route hiện có.");
+                Log("[CẢNH BÁO] Nhập Gateway Ethernet trước khi tải route hiện có.");
 
             return;
         }
@@ -1059,11 +1059,11 @@ public partial class Form1 : Form
             txtNetworks.Lines = routes.Networks;
             txtIPs.Lines      = routes.IPs;
 
-            Log($"Loaded {routes.Count} routes from gateway {ethGateway}");
+            Log($"Đã tải {routes.Count} route từ gateway {ethGateway}");
         }
         catch (Exception ex)
         {
-            Log($"[WARN] LoadExistingRoutesIntoUi: {ex.Message}");
+            Log($"[CẢNH BÁO] LoadExistingRoutesIntoUi: {ex.Message}");
         }
         finally
         {
@@ -1103,7 +1103,7 @@ public partial class Form1 : Form
     }
 
     /// <summary>
-    /// Copy IP button: copies the IPv4 address of the selected adapter row
+    /// Sao Chép IP button: copies the IPv4 address of the selected adapter row
     /// to the system clipboard.
     /// </summary>
     private void btnCopyIP_Click(object sender, EventArgs e)
@@ -1112,23 +1112,23 @@ public partial class Form1 : Form
         {
             MessageBox.Show(
                 "Vui lòng chọn một adapter trước.",
-                "Copy IP", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                "Sao Chép IP", MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
 
         string ip = dgvNetworkInfo.SelectedRows[0].Cells["colIPv4"].Value?.ToString() ?? string.Empty;
 
-        if (string.IsNullOrEmpty(ip) || ip == "(none)")
+        if (string.IsNullOrEmpty(ip) || ip == "(không có)")
         {
             MessageBox.Show(
                 "Adapter đang chọn không có địa chỉ IPv4.",
-                "Copy IP", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                "Sao Chép IP", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
         Clipboard.SetText(ip);
-        Log($"Đã copy IP: {ip}");
-        lblNetworkStatus.Text = $"✅  Copied to clipboard: {ip}";
+        Log($"Đã sao chép IP: {ip}");
+        lblNetworkStatus.Text = $"✅  Đã sao chép vào clipboard: {ip}";
     }
 
     // ──────────────────── Network Info – Core Logic ──────────────────────
@@ -1159,11 +1159,11 @@ public partial class Form1 : Form
 
     /// <summary>
     /// Loads active (Up, non-loopback) network adapters into the DataGridView
-    /// and highlights the adapter currently carrying the default route.
+    /// and highlights the adapter currently carrying the route mặc định.
     /// </summary>
     private void LoadNetworkInfo()
     {
-        Log("═══════════════ Network Info – Refreshing ═══════════════");
+        Log("═══════════════ Thông Tin Mạng – Đang Làm Mới ═══════════════");
 
         try
         {
@@ -1194,19 +1194,19 @@ public partial class Form1 : Form
             }
 
             string defaultInfo = string.IsNullOrEmpty(defaultGatewayIp)
-                ? "no default gateway detected"
-                : $"default gateway → {defaultGatewayIp}";
+                ? "không phát hiện gateway mặc định"
+                : $"gateway mặc định → {defaultGatewayIp}";
 
             lblNetworkStatus.Text =
-                $"Last refresh: {DateTime.Now:HH:mm:ss}  |  " +
-                $"{adapters.Count} active adapter(s)  |  {defaultInfo}";
+                $"Lần làm mới cuối: {DateTime.Now:HH:mm:ss}  |  " +
+                $"{adapters.Count} card mạng đang hoạt động  |  {defaultInfo}";
 
-            Log($"Network Info: {adapters.Count} active adapter(s) found. {defaultInfo}.");
+            Log($"Thông tin mạng: {adapters.Count} card mạng đang hoạt động được tìm thấy. {defaultInfo}.");
         }
         catch (Exception ex)
         {
-            Log($"[ERR] LoadNetworkInfo: {ex.Message}");
-            lblNetworkStatus.Text = $"⚠  Error: {ex.Message}";
+            Log($"[LỖI] LoadNetworkInfo: {ex.Message}");
+            lblNetworkStatus.Text = $"⚠  Lỗi: {ex.Message}";
         }
     }
 
@@ -1215,7 +1215,7 @@ public partial class Form1 : Form
     /// IPv4 configuration details.
     /// </summary>
     /// <param name="defaultGatewayIp">
-    ///   The IPv4 gateway of the current default route (may be empty).
+    ///   The IPv4 gateway of the current route mặc định (may be empty).
     ///   Used to mark the <see cref="AdapterInfo.IsDefault"/> flag.
     /// </param>
     private static List<AdapterInfo> GetNetworkAdapters(string defaultGatewayIp)
@@ -1238,23 +1238,23 @@ public partial class Form1 : Form
             UnicastIPAddressInformation? unicast = props.UnicastAddresses
                 .FirstOrDefault(a => a.Address.AddressFamily == AddressFamily.InterNetwork);
 
-            string ipv4       = unicast?.Address.ToString() ?? "(none)";
+            string ipv4       = unicast?.Address.ToString() ?? "(không có)";
             string subnetMask = unicast is not null
                 ? CidrToSubnetMask(unicast.PrefixLength)
-                : "(none)";
+                : "(không có)";
 
             // ── Default gateway ───────────────────────────────────────────
             string gateway = props.GatewayAddresses
                 .Where(g => g.Address.AddressFamily == AddressFamily.InterNetwork)
                 .Select(g => g.Address.ToString())
-                .FirstOrDefault() ?? "(none)";
+                .FirstOrDefault() ?? "(không có)";
 
             // ── DNS servers (IPv4 only) ────────────────────────────────────
             string dns = string.Join(", ", props.DnsAddresses
                 .Where(d => d.AddressFamily == AddressFamily.InterNetwork)
                 .Select(d => d.ToString()));
             if (string.IsNullOrEmpty(dns))
-                dns = "(none)";
+                dns = "(không có)";
 
             // ── Interface index ───────────────────────────────────────────
             int ifIndex = GetIPv4InterfaceIndex(props);
@@ -1294,8 +1294,8 @@ public partial class Form1 : Form
 
     /// <summary>
     /// Parses <c>route print 0.0.0.0</c> to find the gateway of the current
-    /// default route (the route with destination 0.0.0.0 mask 0.0.0.0).
-    /// Returns an empty string if the default route cannot be determined.
+    /// route mặc định (the route with destination 0.0.0.0 mask 0.0.0.0).
+    /// Returns an empty string if the route mặc định cannot be determined.
     /// </summary>
     private string GetDefaultGatewayIp()
     {
@@ -1320,7 +1320,7 @@ public partial class Form1 : Form
         }
         catch (Exception ex)
         {
-            Log($"[WARN] GetDefaultGatewayIp: {ex.Message}");
+            Log($"[CẢNH BÁO] GetDefaultGatewayIp: {ex.Message}");
         }
 
         return string.Empty;
