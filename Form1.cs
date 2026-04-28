@@ -92,6 +92,195 @@ public partial class Form1 : Form
     }
 
     /// <summary>
+    /// Runs <c>route print</c> and returns the raw routing table output.
+    /// Returns an empty string if the command fails so callers can fail safely.
+    /// </summary>
+    private string GetRouteTable()
+    {
+        try
+        {
+            var (exitCode, output) = RunCommand("route", "print");
+            if (exitCode != 0)
+                Log($"[WARN] route print failed: {output}");
+
+            return output;
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] GetRouteTable: {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Converts a dotted-decimal subnet mask to CIDR prefix length.
+    /// Returns -1 when the mask is invalid or non-contiguous.
+    /// </summary>
+    private static int MaskToCIDR(string mask)
+    {
+        try
+        {
+            if (!IPAddress.TryParse(mask.Trim(), out IPAddress? address)
+                || address.AddressFamily != AddressFamily.InterNetwork)
+            {
+                return -1;
+            }
+
+            uint value = IPv4ToUInt32(address);
+            bool zeroSeen = false;
+            int prefix = 0;
+
+            for (int bit = 31; bit >= 0; bit--)
+            {
+                bool isSet = ((value >> bit) & 1u) == 1u;
+                if (isSet)
+                {
+                    if (zeroSeen)
+                        return -1;
+
+                    prefix++;
+                }
+                else
+                {
+                    zeroSeen = true;
+                }
+            }
+
+            return prefix;
+        }
+        catch
+        {
+            return -1;
+        }
+    }
+
+    /// <summary>
+    /// Parses route print output and returns only routes whose gateway equals
+    /// the Ethernet gateway entered by the user.
+    /// </summary>
+    private RoutesByGateway ParseRoutesByGateway(string gateway)
+    {
+        var networks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var ips      = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            string ethGateway = gateway.Trim();
+            if (!IsValidIp(ethGateway))
+            {
+                Log($"[WARN] Ethernet Gateway không hợp lệ, không load route: '{gateway}'");
+                return new RoutesByGateway([], []);
+            }
+
+            string routeTable = GetRouteTable();
+            if (string.IsNullOrWhiteSpace(routeTable))
+                return new RoutesByGateway([], []);
+
+            foreach (string line in routeTable.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries))
+            {
+                try
+                {
+                    string[] parts = line.Trim().Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    if (parts.Length < 3)
+                        continue;
+
+                    string destination = parts[0];
+                    string mask        = parts[1];
+                    string routeGateway = parts[2];
+
+                    if (!IPAddress.TryParse(destination, out IPAddress? destinationAddress)
+                        || destinationAddress.AddressFamily != AddressFamily.InterNetwork
+                        || !IPAddress.TryParse(mask, out IPAddress? maskAddress)
+                        || maskAddress.AddressFamily != AddressFamily.InterNetwork
+                        || !IPAddress.TryParse(routeGateway, out IPAddress? gatewayAddress)
+                        || gatewayAddress.AddressFamily != AddressFamily.InterNetwork)
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(gatewayAddress.ToString(), ethGateway, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (IsSystemRoute(destinationAddress))
+                        continue;
+
+                    if (mask == "255.255.255.255")
+                    {
+                        ips.Add(destinationAddress.ToString());
+                        continue;
+                    }
+
+                    int prefix = MaskToCIDR(mask);
+                    if (prefix < 0)
+                    {
+                        Log($"  [WARN] Bỏ qua route có subnet mask không hợp lệ: {destination} {mask}");
+                        continue;
+                    }
+
+                    networks.Add($"{destinationAddress}/{prefix}");
+                }
+                catch (Exception ex)
+                {
+                    Log($"  [WARN] Bỏ qua dòng route không parse được: {ex.Message}");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] ParseRoutesByGateway: {ex.Message}");
+        }
+
+        return new RoutesByGateway(
+            SortRoutes(networks, includePrefix: true),
+            SortRoutes(ips, includePrefix: false));
+    }
+
+    private static bool IsSystemRoute(IPAddress destination)
+    {
+        byte[] bytes = destination.GetAddressBytes();
+        byte firstOctet = bytes[0];
+
+        return destination.ToString() == "0.0.0.0"
+            || firstOctet == 127
+            || firstOctet is >= 224 and <= 239;
+    }
+
+    private static string[] SortRoutes(IEnumerable<string> routes, bool includePrefix)
+    {
+        return routes
+            .OrderBy(route => GetRouteSortAddress(route), Comparer<uint>.Default)
+            .ThenBy(route => includePrefix ? GetRouteSortPrefix(route) : 0)
+            .ThenBy(route => route, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static uint GetRouteSortAddress(string route)
+    {
+        string ip = route.Split('/')[0];
+        return IPAddress.TryParse(ip, out IPAddress? address)
+            && address.AddressFamily == AddressFamily.InterNetwork
+                ? IPv4ToUInt32(address)
+                : uint.MaxValue;
+    }
+
+    private static int GetRouteSortPrefix(string route)
+    {
+        string[] parts = route.Split('/');
+        return parts.Length == 2 && int.TryParse(parts[1], out int prefix)
+            ? prefix
+            : 0;
+    }
+
+    private static uint IPv4ToUInt32(IPAddress address)
+    {
+        byte[] bytes = address.GetAddressBytes();
+        return ((uint)bytes[0] << 24)
+            | ((uint)bytes[1] << 16)
+            | ((uint)bytes[2] << 8)
+            | bytes[3];
+    }
+
+    /// <summary>
     /// Returns <c>true</c> if a route with the given destination already exists
     /// in the Windows routing table.
     /// Uses "route print destination" and looks for the destination
@@ -390,13 +579,51 @@ public partial class Form1 : Form
     /// <summary>Clear Log button: wipes the log TextBox.</summary>
     private void btnClearLog_Click(object sender, EventArgs e) => txtLog.Clear();
 
+    /// <summary>Load Existing Routes button: fills route text boxes from route print.</summary>
+    private void btnLoadExistingRoutes_Click(object sender, EventArgs e) => LoadExistingRoutesIntoUi(logWhenGatewayMissing: true);
+
+    private void LoadExistingRoutesIntoUi(bool logWhenGatewayMissing)
+    {
+        string ethGateway = txtEthGateway.Text.Trim();
+        if (string.IsNullOrWhiteSpace(ethGateway))
+        {
+            if (logWhenGatewayMissing)
+                Log("[WARN] Nhập Ethernet Gateway trước khi load route hiện có.");
+
+            return;
+        }
+
+        try
+        {
+            Cursor = Cursors.WaitCursor;
+
+            RoutesByGateway routes = ParseRoutesByGateway(ethGateway);
+            txtNetworks.Lines = routes.Networks;
+            txtIPs.Lines      = routes.IPs;
+
+            Log($"Loaded {routes.Count} routes from gateway {ethGateway}");
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] LoadExistingRoutesIntoUi: {ex.Message}");
+        }
+        finally
+        {
+            Cursor = Cursors.Default;
+        }
+    }
+
     // ─────────────────────── Form Load ──────────────────────────────────
 
     /// <summary>
     /// On form load, populate the Network Info tab immediately so the user
     /// sees data without having to click Refresh first.
     /// </summary>
-    private void Form1_Load(object sender, EventArgs e) => LoadNetworkInfo();
+    private void Form1_Load(object sender, EventArgs e)
+    {
+        LoadNetworkInfo();
+        LoadExistingRoutesIntoUi(logWhenGatewayMissing: false);
+    }
 
     // ──────────────────── Network Info – Button Handlers ────────────────
 
@@ -459,6 +686,11 @@ public partial class Form1 : Form
         string DNS,
         int    InterfaceIndex,
         bool   IsDefault);
+
+    private sealed record RoutesByGateway(string[] Networks, string[] IPs)
+    {
+        public int Count => Networks.Length + IPs.Length;
+    }
 
     /// <summary>
     /// Loads active (Up, non-loopback) network adapters into the DataGridView
