@@ -8,6 +8,7 @@
 //     txtNetworks     – Multiline TextBox for CIDR networks (one per line)
 //     txtIPs          – Multiline TextBox for individual host IPs (one per line)
 //     btnApply        – Apply routes
+//     btnLoadExistingRoutes – Load routes already using Ethernet gateway
 //     btnSaveConfig   – Save configuration to JSON
 //     btnLoadConfig   – Load configuration from JSON
 //     btnClearLog     – Clear the log panel
@@ -49,6 +50,7 @@ partial class Form1
     // ── Buttons (Tab 1) ───────────────────────────────────────────────────
     private Panel    pnlButtons;
     private Button   btnApply;
+    private Button   btnLoadExistingRoutes;
     private Button   btnSaveConfig;
     private Button   btnLoadConfig;
     private Button   btnClearLog;
@@ -253,11 +255,22 @@ partial class Form1
         };
         btnApply.FlatAppearance.BorderSize = 0;
 
+        btnLoadExistingRoutes = new Button
+        {
+            Name      = "btnLoadExistingRoutes",
+            Text      = "↻  Load Existing Routes",
+            Location  = new Point(150, 4),
+            Size      = new Size(170, 36),
+            FlatStyle = FlatStyle.Flat,
+            Font      = new Font("Segoe UI", 9F),
+            Cursor    = Cursors.Hand,
+        };
+
         btnSaveConfig = new Button
         {
             Name      = "btnSaveConfig",
             Text      = "💾  Save Config",
-            Location  = new Point(150, 4),
+            Location  = new Point(330, 4),
             Size      = new Size(140, 36),
             FlatStyle = FlatStyle.Flat,
             Font      = new Font("Segoe UI", 9F),
@@ -268,7 +281,7 @@ partial class Form1
         {
             Name      = "btnLoadConfig",
             Text      = "📂  Load Config",
-            Location  = new Point(300, 4),
+            Location  = new Point(480, 4),
             Size      = new Size(140, 36),
             FlatStyle = FlatStyle.Flat,
             Font      = new Font("Segoe UI", 9F),
@@ -279,14 +292,14 @@ partial class Form1
         {
             Name      = "btnClearLog",
             Text      = "🗑  Clear Log",
-            Location  = new Point(450, 4),
+            Location  = new Point(630, 4),
             Size      = new Size(120, 36),
             FlatStyle = FlatStyle.Flat,
             Font      = new Font("Segoe UI", 9F),
             Cursor    = Cursors.Hand,
         };
 
-        pnlButtons.Controls.AddRange([btnApply, btnSaveConfig, btnLoadConfig, btnClearLog]);
+        pnlButtons.Controls.AddRange([btnApply, btnLoadExistingRoutes, btnSaveConfig, btnLoadConfig, btnClearLog]);
 
         // ── grpLog ────────────────────────────────────────────────────────
         grpLog = new GroupBox
@@ -315,10 +328,11 @@ partial class Form1
         grpLog.Controls.Add(txtLog);
 
         // ── Wire up Tab 1 button click handlers ───────────────────────────
-        btnApply.Click      += btnApply_Click;
-        btnSaveConfig.Click += btnSaveConfig_Click;
-        btnLoadConfig.Click += btnLoadConfig_Click;
-        btnClearLog.Click   += btnClearLog_Click;
+        btnApply.Click              += btnApply_Click;
+        btnLoadExistingRoutes.Click += btnLoadExistingRoutes_Click;
+        btnSaveConfig.Click         += btnSaveConfig_Click;
+        btnLoadConfig.Click         += btnLoadConfig_Click;
+        btnClearLog.Click           += btnClearLog_Click;
 
         // ── Add Tab 1 controls ────────────────────────────────────────────
         tabPageRouteManager.Controls.AddRange([grpGateway, grpRoutes, pnlButtons, grpLog]);
