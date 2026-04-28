@@ -202,20 +202,7 @@ public partial class Form1 : Form
     {
         try
         {
-            List<NetworkInterface> adapterList = adapters.ToList();
-            List<NetworkInterface> candidates = adapterList
-                .Where(adapter => IsAdapterKind(adapter, adapterKind))
-                .ToList();
-
-            if (adapterKind == NetworkAdapterKind.Ethernet && candidates.Count == 0)
-            {
-                // Some Windows drivers report wired cards as vendor-specific
-                // adapters instead of plain "Ethernet"; fall back to any
-                // active, non-WiFi adapter before trying gateway/IP fallback.
-                candidates = adapterList
-                    .Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi))
-                    .ToList();
-            }
+            List<NetworkInterface> candidates = GetAdaptersByType(adapters, adapterKind);
 
             var matches = candidates
                 .Select(adapter => new
@@ -251,6 +238,55 @@ public partial class Form1 : Form
         {
             Log($"[WARN] GetGatewayByType({adapterKind}): {ex.Message}");
             return string.Empty;
+        }
+    }
+
+    private static List<NetworkInterface> GetAdaptersByType(
+        IEnumerable<NetworkInterface> adapters,
+        NetworkAdapterKind adapterKind)
+    {
+        List<NetworkInterface> adapterList = adapters.ToList();
+        List<NetworkInterface> candidates = adapterList
+            .Where(adapter => IsAdapterKind(adapter, adapterKind))
+            .ToList();
+
+        if (adapterKind == NetworkAdapterKind.Ethernet && candidates.Count == 0)
+        {
+            // Some Windows drivers report wired cards as vendor-specific
+            // adapters instead of plain "Ethernet"; fall back to any
+            // active, non-WiFi adapter before trying gateway/IP fallback.
+            candidates = adapterList
+                .Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi))
+                .ToList();
+        }
+
+        return candidates;
+    }
+
+    private static int GetInterfaceIndexByType(
+        IEnumerable<NetworkInterface> adapters,
+        NetworkAdapterKind adapterKind)
+    {
+        try
+        {
+            return GetAdaptersByType(adapters, adapterKind)
+                .Select(adapter => new
+                {
+                    InterfaceIndex = GetIPv4InterfaceIndex(adapter.GetIPProperties()),
+                    Gateway        = GetIPv4Gateway(adapter),
+                    IPv4           = GetIPv4(adapter),
+                    IsDefault      = IsDefaultGatewayAdapter(adapter),
+                })
+                .Where(candidate => candidate.InterfaceIndex > 0)
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Gateway)
+                    || !string.IsNullOrWhiteSpace(candidate.IPv4))
+                .OrderByDescending(candidate => candidate.IsDefault)
+                .Select(candidate => candidate.InterfaceIndex)
+                .FirstOrDefault();
+        }
+        catch
+        {
+            return 0;
         }
     }
 
@@ -347,6 +383,75 @@ public partial class Form1 : Form
         {
             return false;
         }
+    }
+
+    private void ResetInterfaceMetric(int interfaceIndex, string label)
+    {
+        if (interfaceIndex <= 0)
+        {
+            Log($"  [WARN] Cannot reset {label} metric: interface index not found.");
+            return;
+        }
+
+        try
+        {
+            string script =
+                $"Set-NetIPInterface -InterfaceIndex {interfaceIndex} -AddressFamily IPv4 -AutomaticMetric Enabled";
+            var (exitCode, output) = RunCommand(
+                "powershell",
+                $"-NoProfile -ExecutionPolicy Bypass -Command \"{script}\"");
+
+            if (exitCode != 0)
+                Log($"  [WARN] Cannot reset {label} metric on interface {interfaceIndex}: {output}");
+            else
+                Log($"  [OK]   Reset {label} metric on interface {interfaceIndex}");
+        }
+        catch (Exception ex)
+        {
+            Log($"  [WARN] ResetInterfaceMetric({label}): {ex.Message}");
+        }
+    }
+
+    private void SetInterfaceMetric(int interfaceIndex, int metric, string label)
+    {
+        if (interfaceIndex <= 0)
+        {
+            Log($"  [WARN] Cannot set {label} metric: interface index not found.");
+            return;
+        }
+
+        try
+        {
+            var (exitCode, output) = RunCommand(
+                "netsh",
+                $"interface ipv4 set interface {interfaceIndex} metric={metric}");
+
+            if (exitCode != 0)
+                Log($"  [WARN] Cannot set {label} metric on interface {interfaceIndex}: {output}");
+            else
+                Log($"  [OK]   Set {label} interface {interfaceIndex} metric={metric}");
+        }
+        catch (Exception ex)
+        {
+            Log($"  [WARN] SetInterfaceMetric({label}): {ex.Message}");
+        }
+    }
+
+    private void ResetManagedNetworkMetrics(int ethernetInterfaceIndex, int wifiInterfaceIndex)
+    {
+        var resetIndexes = new HashSet<int>();
+
+        if (ethernetInterfaceIndex > 0 && resetIndexes.Add(ethernetInterfaceIndex))
+            ResetInterfaceMetric(ethernetInterfaceIndex, "Ethernet");
+
+        if (wifiInterfaceIndex > 0 && resetIndexes.Add(wifiInterfaceIndex))
+            ResetInterfaceMetric(wifiInterfaceIndex, "WiFi");
+    }
+
+    private void ApplyInterfaceMetrics(int ethernetInterfaceIndex, int wifiInterfaceIndex)
+    {
+        SetInterfaceMetric(ethernetInterfaceIndex, metric: 10, label: "Ethernet");
+        SetInterfaceMetric(wifiInterfaceIndex,     metric: 50, label: "WiFi");
     }
 
     /// <summary>
@@ -566,6 +671,19 @@ public partial class Form1 : Form
         }
     }
 
+    private void DeleteDefaultRoute()
+    {
+        try
+        {
+            DeleteRoute("0.0.0.0", "0.0.0.0");
+            Log("Deleted default route: 0.0.0.0/0");
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] DeleteDefaultRoute: {ex.Message}");
+        }
+    }
+
     /// <summary>
     /// Adds a route only if it does not already exist, preventing duplicates.
     /// </summary>
@@ -676,12 +794,22 @@ public partial class Form1 : Form
             btnApply.Enabled = false;
             Cursor = Cursors.WaitCursor;
 
-            // Step 1 – Delete only routes currently listed in the UI
-            Log("─── Bước 1: Xóa route cũ từ UI ─────────────────────────");
-            DeleteRoutesFromUI();
+            var activeAdapters = GetActiveAdapters();
+            int ethernetInterfaceIndex = GetInterfaceIndexByType(activeAdapters, NetworkAdapterKind.Ethernet);
+            int wifiInterfaceIndex     = GetInterfaceIndexByType(activeAdapters, NetworkAdapterKind.Wifi);
 
-            // Step 2 – Add routes for each CIDR network → Ethernet gateway
-            Log("─── Bước 2: Thêm route mạng (CIDR) → Ethernet ─────────");
+            // Step 1 – Clear and re-apply interface metrics like the BAT file
+            Log("─── Bước 1: Reset / set interface metric ───────────────");
+            ResetManagedNetworkMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
+            ApplyInterfaceMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
+
+            // Step 2 – Delete old routes from UI plus the default WiFi route
+            Log("─── Bước 2: Xóa route cũ ───────────────────────────────");
+            DeleteRoutesFromUI();
+            DeleteDefaultRoute();
+
+            // Step 3 – Add routes for each CIDR network → Ethernet gateway
+            Log("─── Bước 3: Thêm route mạng (CIDR) → Ethernet ─────────");
             foreach (string cidr in networks)
             {
                 string[] parts  = cidr.Split('/');
@@ -691,16 +819,16 @@ public partial class Form1 : Form
                 AddRoute(network, mask, ethGateway, metric: 5);
             }
 
-            // Step 3 – Add host routes for individual IPs → Ethernet gateway
-            Log("─── Bước 3: Thêm route IP riêng lẻ → Ethernet ─────────");
+            // Step 4 – Add host routes for individual IPs → Ethernet gateway
+            Log("─── Bước 4: Thêm route IP riêng lẻ → Ethernet ─────────");
             foreach (string ip in ips)
             {
                 AddRoute(ip, "255.255.255.255", ethGateway, metric: 5);
             }
 
-            // Step 4 – Default route via WiFi gateway
-            Log("─── Bước 4: Thêm default route → WiFi ─────────────────");
-            AddRoute("0.0.0.0", "0.0.0.0", wifiGateway, metric: 1);
+            // Step 5 – Default route via WiFi gateway
+            Log("─── Bước 5: Thêm default route → WiFi ─────────────────");
+            AddRoute("0.0.0.0", "0.0.0.0", wifiGateway, metric: 20);
 
             Log("═══════════════ Apply Routes – Hoàn Tất ════════════════");
             MessageBox.Show(
