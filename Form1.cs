@@ -183,15 +183,18 @@ public partial class Form1 : Form
         try
         {
             List<NetworkInterface> adapterList = adapters.ToList();
-            IEnumerable<NetworkInterface> candidates = adapterList
-                .Where(adapter => IsAdapterKind(adapter, adapterKind));
+            List<NetworkInterface> candidates = adapterList
+                .Where(adapter => IsAdapterKind(adapter, adapterKind))
+                .ToList();
 
-            if (adapterKind == NetworkAdapterKind.Ethernet && !candidates.Any())
+            if (adapterKind == NetworkAdapterKind.Ethernet && candidates.Count == 0)
             {
                 // Some Windows drivers report wired cards as vendor-specific
                 // adapters instead of plain "Ethernet"; fall back to any
-                // active, non-WiFi adapter that exposes an IPv4 gateway.
-                candidates = adapterList.Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi));
+                // active, non-WiFi adapter before trying gateway/IP fallback.
+                candidates = adapterList
+                    .Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi))
+                    .ToList();
             }
 
             var matches = candidates
@@ -204,7 +207,25 @@ public partial class Form1 : Form
                 .OrderByDescending(candidate => candidate.IsDefaultGateway)
                 .ToList();
 
-            return matches.FirstOrDefault()?.Gateway ?? string.Empty;
+            string gateway = matches.FirstOrDefault()?.Gateway ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(gateway))
+                return gateway;
+
+            if (adapterKind == NetworkAdapterKind.Ethernet)
+            {
+                foreach (NetworkInterface adapter in candidates)
+                {
+                    string ipv4 = GetIPv4(adapter);
+                    string guessedGateway = GuessGatewayFromIP(ipv4);
+                    if (string.IsNullOrWhiteSpace(guessedGateway))
+                        continue;
+
+                    Log($"Gateway not found → guessed: {guessedGateway}");
+                    return guessedGateway;
+                }
+            }
+
+            return string.Empty;
         }
         catch (Exception ex)
         {
@@ -252,6 +273,41 @@ public partial class Form1 : Form
                 .Where(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork)
                 .Select(gateway => gateway.Address.ToString())
                 .FirstOrDefault() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GetIPv4(NetworkInterface adapter)
+    {
+        try
+        {
+            return adapter.GetIPProperties().UnicastAddresses
+                .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(address => address.Address.ToString())
+                .FirstOrDefault() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GuessGatewayFromIP(string ipv4)
+    {
+        try
+        {
+            if (!IPAddress.TryParse(ipv4, out IPAddress? address)
+                || address.AddressFamily != AddressFamily.InterNetwork)
+            {
+                return string.Empty;
+            }
+
+            byte[] bytes = address.GetAddressBytes();
+            bytes[3] = 1;
+            return new IPAddress(bytes).ToString();
         }
         catch
         {
