@@ -5,6 +5,7 @@
 //   Tab 1 – Route Manager:
 //     txtEthGateway   – Ethernet Gateway input
 //     txtWifiGateway  – WiFi Gateway input
+//     btnDetectNetwork – Auto-detect Ethernet/WiFi gateways
 //     txtNetworks     – Multiline TextBox for CIDR networks (one per line)
 //     txtIPs          – Multiline TextBox for individual host IPs (one per line)
 //     btnApply        – Apply routes
@@ -37,6 +38,7 @@ partial class Form1
     private TextBox  txtEthGateway;
     private Label    lblWifiGateway;
     private TextBox  txtWifiGateway;
+    private Button   btnDetectNetwork;
 
     // ── Routes group (Tab 1) ──────────────────────────────────────────────
     private GroupBox grpRoutes;
@@ -159,8 +161,24 @@ partial class Form1
             Font            = new Font("Segoe UI", 9F),
         };
 
+        btnDetectNetwork = new Button
+        {
+            Name      = "btnDetectNetwork",
+            Text      = "Detect Network",
+            Location  = new Point(700, 22),
+            Size      = new Size(140, 32),
+            BackColor = Color.FromArgb(0, 120, 215),
+            ForeColor = Color.White,
+            FlatStyle = FlatStyle.Flat,
+            Font      = new Font("Segoe UI", 9F, FontStyle.Bold),
+            Cursor    = Cursors.Hand,
+            Anchor    = AnchorStyles.Top | AnchorStyles.Right,
+        };
+        btnDetectNetwork.FlatAppearance.BorderSize = 0;
+
         grpGateway.Controls.AddRange([lblEthGateway, txtEthGateway,
-                                       lblWifiGateway, txtWifiGateway]);
+                                       lblWifiGateway, txtWifiGateway,
+                                       btnDetectNetwork]);
 
         // ── grpRoutes ─────────────────────────────────────────────────────
         grpRoutes = new GroupBox
@@ -329,6 +347,7 @@ partial class Form1
 
         // ── Wire up Tab 1 button click handlers ───────────────────────────
         btnApply.Click              += btnApply_Click;
+        btnDetectNetwork.Click      += btnDetectNetwork_Click;
         btnLoadExistingRoutes.Click += btnLoadExistingRoutes_Click;
         btnSaveConfig.Click         += btnSaveConfig_Click;
         btnLoadConfig.Click         += btnLoadConfig_Click;
