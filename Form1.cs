@@ -155,6 +155,181 @@ public partial class Form1 : Form
     }
 
     /// <summary>
+    /// Returns active, non-loopback network adapters. Failures return an empty
+    /// list so network auto-detection never blocks the form from loading.
+    /// </summary>
+    private List<NetworkInterface> GetActiveAdapters()
+    {
+        try
+        {
+            return NetworkInterface.GetAllNetworkInterfaces()
+                .Where(adapter => adapter.OperationalStatus == OperationalStatus.Up)
+                .Where(adapter => adapter.NetworkInterfaceType != NetworkInterfaceType.Loopback)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] GetActiveAdapters: {ex.Message}");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Finds the IPv4 gateway for Ethernet or WiFi adapters.
+    /// When multiple adapters match, adapters carrying the default gateway are preferred.
+    /// </summary>
+    private string GetGatewayByType(IEnumerable<NetworkInterface> adapters, NetworkAdapterKind adapterKind)
+    {
+        try
+        {
+            List<NetworkInterface> adapterList = adapters.ToList();
+            List<NetworkInterface> candidates = adapterList
+                .Where(adapter => IsAdapterKind(adapter, adapterKind))
+                .ToList();
+
+            if (adapterKind == NetworkAdapterKind.Ethernet && candidates.Count == 0)
+            {
+                // Some Windows drivers report wired cards as vendor-specific
+                // adapters instead of plain "Ethernet"; fall back to any
+                // active, non-WiFi adapter before trying gateway/IP fallback.
+                candidates = adapterList
+                    .Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi))
+                    .ToList();
+            }
+
+            var matches = candidates
+                .Select(adapter => new
+                {
+                    Gateway = GetIPv4Gateway(adapter),
+                    IsDefaultGateway = IsDefaultGatewayAdapter(adapter),
+                })
+                .Where(candidate => !string.IsNullOrWhiteSpace(candidate.Gateway))
+                .OrderByDescending(candidate => candidate.IsDefaultGateway)
+                .ToList();
+
+            string gateway = matches.FirstOrDefault()?.Gateway ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(gateway))
+                return gateway;
+
+            if (adapterKind == NetworkAdapterKind.Ethernet)
+            {
+                foreach (NetworkInterface adapter in candidates)
+                {
+                    string ipv4 = GetIPv4(adapter);
+                    string guessedGateway = GuessGatewayFromIP(ipv4);
+                    if (string.IsNullOrWhiteSpace(guessedGateway))
+                        continue;
+
+                    Log($"Gateway not found → guessed: {guessedGateway}");
+                    return guessedGateway;
+                }
+            }
+
+            return string.Empty;
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] GetGatewayByType({adapterKind}): {ex.Message}");
+            return string.Empty;
+        }
+    }
+
+    private static bool IsAdapterKind(NetworkInterface adapter, NetworkAdapterKind adapterKind)
+    {
+        string name = adapter.Name ?? string.Empty;
+        string description = adapter.Description ?? string.Empty;
+        string text = $"{name} {description}";
+
+        return adapterKind switch
+        {
+            NetworkAdapterKind.Ethernet =>
+                adapter.NetworkInterfaceType == NetworkInterfaceType.Ethernet
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.FastEthernetFx
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.FastEthernetT
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet
+                || (text.Contains("Ethernet", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Local Area", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("LAN", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("GbE", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Gigabit", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Realtek PCIe", StringComparison.OrdinalIgnoreCase)),
+
+            NetworkAdapterKind.Wifi =>
+                adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211
+                || text.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("WiFi", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Wireless", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("WLAN", StringComparison.OrdinalIgnoreCase),
+
+            _ => false,
+        };
+    }
+
+    private static string GetIPv4Gateway(NetworkInterface adapter)
+    {
+        try
+        {
+            return adapter.GetIPProperties().GatewayAddresses
+                .Where(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(gateway => gateway.Address.ToString())
+                .FirstOrDefault() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GetIPv4(NetworkInterface adapter)
+    {
+        try
+        {
+            return adapter.GetIPProperties().UnicastAddresses
+                .Where(address => address.Address.AddressFamily == AddressFamily.InterNetwork)
+                .Select(address => address.Address.ToString())
+                .FirstOrDefault() ?? string.Empty;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static string GuessGatewayFromIP(string ipv4)
+    {
+        try
+        {
+            if (!IPAddress.TryParse(ipv4, out IPAddress? address)
+                || address.AddressFamily != AddressFamily.InterNetwork)
+            {
+                return string.Empty;
+            }
+
+            byte[] bytes = address.GetAddressBytes();
+            bytes[3] = 1;
+            return new IPAddress(bytes).ToString();
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private static bool IsDefaultGatewayAdapter(NetworkInterface adapter)
+    {
+        try
+        {
+            return adapter.GetIPProperties().GatewayAddresses
+                .Any(gateway => gateway.Address.AddressFamily == AddressFamily.InterNetwork
+                    && gateway.Address.ToString() != "0.0.0.0");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Parses route print output and returns only routes whose gateway equals
     /// the Ethernet gateway entered by the user.
     /// </summary>
@@ -579,6 +754,37 @@ public partial class Form1 : Form
     /// <summary>Clear Log button: wipes the log TextBox.</summary>
     private void btnClearLog_Click(object sender, EventArgs e) => txtLog.Clear();
 
+    /// <summary>Detect Network button: fills Ethernet/WiFi gateway text boxes.</summary>
+    private void btnDetectNetwork_Click(object sender, EventArgs e) => DetectNetworkGateways();
+
+    private void DetectNetworkGateways()
+    {
+        try
+        {
+            btnDetectNetwork.Enabled = false;
+            Cursor = Cursors.WaitCursor;
+
+            var adapters = GetActiveAdapters();
+            string ethernetGateway = GetGatewayByType(adapters, NetworkAdapterKind.Ethernet);
+            string wifiGateway     = GetGatewayByType(adapters, NetworkAdapterKind.Wifi);
+
+            txtEthGateway.Text  = ethernetGateway;
+            txtWifiGateway.Text = wifiGateway;
+
+            Log($"Detected Ethernet: {(string.IsNullOrEmpty(ethernetGateway) ? "(none)" : ethernetGateway)}");
+            Log($"Detected WiFi: {(string.IsNullOrEmpty(wifiGateway) ? "(none)" : wifiGateway)}");
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] DetectNetworkGateways: {ex.Message}");
+        }
+        finally
+        {
+            btnDetectNetwork.Enabled = true;
+            Cursor = Cursors.Default;
+        }
+    }
+
     /// <summary>Load Existing Routes button: fills route text boxes from route print.</summary>
     private void btnLoadExistingRoutes_Click(object sender, EventArgs e) => LoadExistingRoutesIntoUi(logWhenGatewayMissing: true);
 
@@ -621,6 +827,7 @@ public partial class Form1 : Form
     /// </summary>
     private void Form1_Load(object sender, EventArgs e)
     {
+        DetectNetworkGateways();
         LoadNetworkInfo();
         LoadExistingRoutesIntoUi(logWhenGatewayMissing: false);
     }
@@ -686,6 +893,12 @@ public partial class Form1 : Form
         string DNS,
         int    InterfaceIndex,
         bool   IsDefault);
+
+    private enum NetworkAdapterKind
+    {
+        Ethernet,
+        Wifi,
+    }
 
     private sealed record RoutesByGateway(string[] Networks, string[] IPs)
     {
