@@ -671,6 +671,57 @@ public partial class Form1 : Form
         }
     }
 
+    /// <summary>
+    /// Deletes every non-system route currently using the Ethernet gateway.
+    /// This removes routes that were previously added by the app but have since
+    /// been removed from the UI, so Apply can rebuild the route list cleanly.
+    /// </summary>
+    private void DeleteExistingRoutesByGateway(string ethGateway)
+    {
+        try
+        {
+            RoutesByGateway existingRoutes = ParseRoutesByGateway(ethGateway);
+            Log($"Found {existingRoutes.Count} existing route(s) from gateway {ethGateway}");
+
+            foreach (string cidr in existingRoutes.Networks)
+            {
+                string[] parts = cidr.Split('/');
+                if (parts.Length != 2)
+                {
+                    Log($"  [WARN] Bỏ qua route không hợp lệ khi xóa theo gateway: '{cidr}'");
+                    continue;
+                }
+
+                string network = parts[0].Trim();
+                string mask = CIDRToMask(cidr);
+                if (string.IsNullOrEmpty(mask))
+                {
+                    Log($"  [WARN] Không convert được CIDR sang mask: '{cidr}'");
+                    continue;
+                }
+
+                DeleteRoute(network, mask);
+                Log($"Deleted existing route from gateway: {cidr}");
+            }
+
+            foreach (string ip in existingRoutes.IPs)
+            {
+                if (!IsValidIp(ip))
+                {
+                    Log($"  [WARN] Bỏ qua IP không hợp lệ khi xóa theo gateway: '{ip}'");
+                    continue;
+                }
+
+                DeleteRoute(ip, "255.255.255.255");
+                Log($"Deleted existing IP route from gateway: {ip}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] DeleteExistingRoutesByGateway: {ex.Message}");
+        }
+    }
+
     private void DeleteDefaultRoute()
     {
         try
@@ -803,9 +854,9 @@ public partial class Form1 : Form
             ResetManagedNetworkMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
             ApplyInterfaceMetrics(ethernetInterfaceIndex, wifiInterfaceIndex);
 
-            // Step 2 – Delete old routes from UI plus the default WiFi route
+            // Step 2 – Delete all old Ethernet routes plus the default WiFi route
             Log("─── Bước 2: Xóa route cũ ───────────────────────────────");
-            DeleteRoutesFromUI();
+            DeleteExistingRoutesByGateway(ethGateway);
             DeleteDefaultRoute();
 
             // Step 3 – Add routes for each CIDR network → Ethernet gateway
