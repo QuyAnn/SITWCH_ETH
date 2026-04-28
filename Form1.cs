@@ -182,8 +182,19 @@ public partial class Form1 : Form
     {
         try
         {
-            var matches = adapters
-                .Where(adapter => IsAdapterKind(adapter, adapterKind))
+            List<NetworkInterface> adapterList = adapters.ToList();
+            IEnumerable<NetworkInterface> candidates = adapterList
+                .Where(adapter => IsAdapterKind(adapter, adapterKind));
+
+            if (adapterKind == NetworkAdapterKind.Ethernet && !candidates.Any())
+            {
+                // Some Windows drivers report wired cards as vendor-specific
+                // adapters instead of plain "Ethernet"; fall back to any
+                // active, non-WiFi adapter that exposes an IPv4 gateway.
+                candidates = adapterList.Where(adapter => !IsAdapterKind(adapter, NetworkAdapterKind.Wifi));
+            }
+
+            var matches = candidates
                 .Select(adapter => new
                 {
                     Gateway = GetIPv4Gateway(adapter),
@@ -205,17 +216,29 @@ public partial class Form1 : Form
     private static bool IsAdapterKind(NetworkInterface adapter, NetworkAdapterKind adapterKind)
     {
         string name = adapter.Name ?? string.Empty;
+        string description = adapter.Description ?? string.Empty;
+        string text = $"{name} {description}";
 
         return adapterKind switch
         {
             NetworkAdapterKind.Ethernet =>
                 adapter.NetworkInterfaceType == NetworkInterfaceType.Ethernet
-                || name.Contains("Ethernet", StringComparison.OrdinalIgnoreCase),
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.FastEthernetFx
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.FastEthernetT
+                || adapter.NetworkInterfaceType == NetworkInterfaceType.GigabitEthernet
+                || (text.Contains("Ethernet", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Local Area", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("LAN", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("GbE", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Gigabit", StringComparison.OrdinalIgnoreCase)
+                    || text.Contains("Realtek PCIe", StringComparison.OrdinalIgnoreCase)),
 
             NetworkAdapterKind.Wifi =>
                 adapter.NetworkInterfaceType == NetworkInterfaceType.Wireless80211
-                || name.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase)
-                || name.Contains("Wireless", StringComparison.OrdinalIgnoreCase),
+                || text.Contains("Wi-Fi", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("WiFi", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("Wireless", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("WLAN", StringComparison.OrdinalIgnoreCase),
 
             _ => false,
         };
