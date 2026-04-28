@@ -67,6 +67,26 @@ public partial class Form1 : Form
     }
 
     /// <summary>
+    /// Converts a CIDR route (e.g. "10.53.0.0/16") to its subnet mask.
+    /// Returns an empty string when the CIDR is invalid.
+    /// </summary>
+    private static string CIDRToMask(string cidr)
+    {
+        try
+        {
+            string[] parts = cidr.Trim().Split('/');
+            if (parts.Length != 2 || !int.TryParse(parts[1], out int prefix))
+                return string.Empty;
+
+            return CidrToSubnetMask(prefix);
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    /// <summary>
     /// Runs an external command and returns its exit code and combined output.
     /// </summary>
     private static (int ExitCode, string Output) RunCommand(string fileName, string arguments)
@@ -482,13 +502,68 @@ public partial class Form1 : Form
     /// Deletes a route silently; logs a warning if it could not be removed
     /// (e.g. because it did not exist).
     /// </summary>
-    private void DeleteRoute(string destination)
+    private void DeleteRoute(string destination, string mask)
     {
-        var (exitCode, output) = RunCommand("route", $"delete {destination}");
+        var (exitCode, output) = RunCommand("route", $"delete {destination} mask {mask}");
         if (exitCode != 0)
-            Log($"  [WARN] Cannot delete route {destination}: {output}");
+            Log($"  [WARN] Cannot delete route {destination} mask {mask}: {output}");
         else
-            Log($"  [OK]   Deleted route {destination}");
+            Log($"  [OK]   Deleted route {destination} mask {mask}");
+    }
+
+    /// <summary>
+    /// Deletes only the routes currently entered in the Networks/IPs UI.
+    /// Missing routes are logged as warnings by route.exe but never crash Apply.
+    /// </summary>
+    private void DeleteRoutesFromUI()
+    {
+        try
+        {
+            foreach (string rawLine in txtNetworks.Lines)
+            {
+                string cidr = rawLine.Trim();
+                if (string.IsNullOrEmpty(cidr))
+                    continue;
+
+                if (!IsValidCidr(cidr))
+                {
+                    Log($"  [WARN] Bỏ qua CIDR không hợp lệ khi xóa: '{cidr}'");
+                    continue;
+                }
+
+                string[] parts = cidr.Split('/');
+                string network = parts[0].Trim();
+                string mask = CIDRToMask(cidr);
+                if (string.IsNullOrEmpty(mask))
+                {
+                    Log($"  [WARN] Không convert được CIDR sang mask: '{cidr}'");
+                    continue;
+                }
+
+                DeleteRoute(network, mask);
+                Log($"Deleted route: {cidr}");
+            }
+
+            foreach (string rawLine in txtIPs.Lines)
+            {
+                string ip = rawLine.Trim();
+                if (string.IsNullOrEmpty(ip))
+                    continue;
+
+                if (!IsValidIp(ip))
+                {
+                    Log($"  [WARN] Bỏ qua IP không hợp lệ khi xóa: '{ip}'");
+                    continue;
+                }
+
+                DeleteRoute(ip, "255.255.255.255");
+                Log($"Deleted IP route: {ip}");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] DeleteRoutesFromUI: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -601,11 +676,9 @@ public partial class Form1 : Form
             btnApply.Enabled = false;
             Cursor = Cursors.WaitCursor;
 
-            // Step 1 – Delete stale/conflicting routes
-            Log("─── Bước 1: Xóa route cũ ───────────────────────────────");
-            DeleteRoute("10.53.0.0");
-            DeleteRoute("10.21.0.0");
-            DeleteRoute("0.0.0.0");   // default route will be re-added later
+            // Step 1 – Delete only routes currently listed in the UI
+            Log("─── Bước 1: Xóa route cũ từ UI ─────────────────────────");
+            DeleteRoutesFromUI();
 
             // Step 2 – Add routes for each CIDR network → Ethernet gateway
             Log("─── Bước 2: Thêm route mạng (CIDR) → Ethernet ─────────");
